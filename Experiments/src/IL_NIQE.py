@@ -12,7 +12,7 @@ from scipy.optimize import fmin
 
 import time
 # import ray
-from matlab_resize import MATLABLikeResize
+from src.matlab_resize import MATLABLikeResize
 
 def reorder_image(img, input_order='HWC'):
     """Reorder images to 'HWC' order.

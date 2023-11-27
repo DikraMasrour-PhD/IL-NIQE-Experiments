@@ -11,7 +11,7 @@ import scipy.io
 from scipy.stats import exponweib
 from scipy.optimize import fmin
 import time
-from matlab_resize import MATLABLikeResize
+from src.matlab_resize import MATLABLikeResize
 from tqdm import tqdm
 
 def MyPCA(sampleData, reservedRatio):
