@@ -2,7 +2,7 @@ import cv2
 import math
 import numpy as np
 import os
-from scipy.ndimage.filters import convolve
+from scipy.ndimage import convolve
 from scipy.signal import convolve2d
 from scipy.special import gamma
 from scipy.ndimage import correlate
@@ -33,7 +33,7 @@ def MyPCA(sampleData, reservedRatio):
 
     principleVectors = np.array(principleVectors).T
     projectionOfTrainingData = np.matmul(principleVectors.T, centerlizedData)
-
+    
     return principleVectors, meanOfSampleData, projectionOfTrainingData
 
 def fitweibull(x):
@@ -56,19 +56,28 @@ def estimate_aggd_param(block):
     """
     block = block.flatten()
     gam = np.arange(0.2, 10.001, 0.001)  # len = 9801
-    gam_reciprocal = np.reciprocal(gam)
+    gam_reciprocal = np.reciprocal(gam)  # element-wise reciprocal of the gam array
+
+    # Eq(5) (Lasmar et al., 2009): Generalised Gaussian ratio function
     r_gam = np.square(gamma(gam_reciprocal * 2)) / (gamma(gam_reciprocal) * gamma(gam_reciprocal * 3))
 
     left_std = np.sqrt(np.mean(block[block < 0]**2))
     right_std = np.sqrt(np.mean(block[block > 0]**2))
+
+    # Eq(6) (Lasmar et al., 2009)
     gammahat = left_std / right_std
+
+    # Eq(7) (Lasmar et al., 2009)
     rhat = (np.mean(np.abs(block)))**2 / np.mean(block**2)
+
+    # Eq(8) (Lasmar et al., 2009)
     rhatnorm = (rhat * (gammahat**3 + 1) * (gammahat + 1)) / ((gammahat**2 + 1)**2)
+
     array_position = np.argmin((r_gam - rhatnorm)**2)
 
-    alpha = gam[array_position]
-    beta_l = left_std * np.sqrt(gamma(1 / alpha) / gamma(3 / alpha))
-    beta_r = right_std * np.sqrt(gamma(1 / alpha) / gamma(3 / alpha))
+    alpha = gam[array_position] # Shape parameter
+    beta_l = left_std * np.sqrt(gamma(1 / alpha) / gamma(3 / alpha)) # Left scale parameter
+    beta_r = right_std * np.sqrt(gamma(1 / alpha) / gamma(3 / alpha)) # Right scale parameter
     return (alpha, beta_l, beta_r)
 
 def compute_mean(feature, block_posi):
@@ -97,7 +106,7 @@ def compute_feature(feature_list, block_posi):
     for i in range(len(shifts)):
         shifted_block = np.roll(data, shifts[i], axis=(0, 1))
         alpha, beta_l, beta_r = estimate_aggd_param(data * shifted_block)
-        # Eq. 8 in NIQE
+        # Eq. 8 in NIQE(Mittal et al., 2013)
         mean = (beta_r - beta_l) * (gamma(2 / alpha) / gamma(1 / alpha))
         feat.extend([alpha, mean, beta_l, beta_r])
 
@@ -220,12 +229,16 @@ def train(data_path):
     gaussian_window = matlab_fspecial((5,5),5/6)
     gaussian_window = gaussian_window/np.sum(gaussian_window)
 
-    trainingFiles = sorted(os.listdir(data_path))
+    # Get training (pristine) images
+    trainingFiles = sorted(os.listdir(data_path))[:25]
 
     pic_features = []
     pic_sharpness = []
 
     for img_file in tqdm(trainingFiles):
+        # debug
+        # print('training image', img_file)
+        # Image pre-processing
         img = cv2.imread(os.path.join(data_path, img_file))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = img.astype(np.float64)
@@ -234,12 +247,20 @@ def train(data_path):
         resize_func = MATLABLikeResize(output_shape=(normalizedWidth, normalizedWidth))
         img = resize_func.resize_img(img)
         img = np.clip(img, 0.0, 255.0)
+        # debug
+        # print('preproc image', img)
 
         h, w, _ = img.shape
 
+        # Compute number of resulting blocks given block_size and image_size
         num_block_h = math.floor(h / block_size_h)
         num_block_w = math.floor(w / block_size_w)
+        # debug
+        # print('num blocks h', num_block_h)
+        # print('num blocks w', num_block_w)
         img = img[0:num_block_h * block_size_h, 0:num_block_w * block_size_w]
+        # debug
+        # print('img divided ?', img)
 
         O1 = 0.3*img[:,:,0] + 0.04*img[:,:,1] - 0.35*img[:,:,2]
         O2 = 0.34*img[:,:,0] - 0.6*img[:,:,1] + 0.17*img[:,:,2]
@@ -250,14 +271,16 @@ def train(data_path):
         BChannel = img[:,:,2]
 
         sharpness = []
-        distparam = []  # dist param is actually the multiscale features
+        distparam = []  # distparam is actually the multiscale features
         for scale in (1, 2):  # perform on two scales (1, 2)
+            # debug
+            # print('scale', scale)
             mu = convolve(O3, gaussian_window, mode='nearest')
             sigma = np.sqrt(np.abs(convolve(np.square(O3), gaussian_window, mode='nearest') - np.square(mu)))
             # normalize, as in Eq. 1 in the paper
             structdis = (O3 - mu) / (sigma + 1)
 
-            dx, dy = gauDerivative(sigmaForGauDerivative/(scale**scaleFactorForGaussianDer));
+            dx, dy = gauDerivative(sigmaForGauDerivative/(scale**scaleFactorForGaussianDer))
             compRes = conv2(O1, dx + 1j*dy, 'same')
             IxO1 = np.real(compRes)
             IyO1 = np.imag(compRes)
@@ -385,11 +408,11 @@ def train(data_path):
     templateModel.append(meanOfSampleData)
     templateModel.append(principleVectors)
 
-    scipy.io.savemat('./python_templateModel.mat', {'templateModel':[templateModel]})
+    scipy.io.savemat('./python_MyModel.mat', {'MyModel':[templateModel]})
 
 if __name__ == '__main__':
     import warnings
-    img_path = '../pristine/'
+    img_path = 'pristine'
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=RuntimeWarning)
         time_start = time.time()
